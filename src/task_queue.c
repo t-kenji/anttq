@@ -79,9 +79,11 @@ struct task_queue {
  *  @param  [in]    id      タスク識別子.
  *  @param  [in]    status  タスク状態.
  *  @param  [in]    arg     タスク固有引数.
+ *  @return true (処理継続) 固定.
  */
-static void null_callback(task_t id, enum task_status status, void *arg)
+static bool null_callback(task_t id, enum task_status status, void *arg)
 {
+    return true;
 }
 
 /**
@@ -105,6 +107,8 @@ static uint32_t anttq_update_total_tasks(struct task_queue *tq)
  *
  *  キューからタスクを取り出し, 実行する.
  *  タスクが失敗した場合は, 指定に従いリトライを行う.
+ *  @c callback が指定されており, かつ callback が false を返した場合は,
+ *  処理を中断する.
  *
  *  @param  [in]    arg タスク固有引数.
  */
@@ -123,10 +127,14 @@ static void *anttq_worker(void *arg)
         safe_queue_deq(que, true, &cardboard);
 
         item = &cardboard.item;
-        item->callback(cardboard.id, TS_ACK, item->arg);
+        if (!item->callback(cardboard.id, TS_ACK, item->arg)) {
+            continue;
+        }
         result = item->task(cardboard.id, item->arg);
         if (!result && (item->retry > 0)) {
-            item->callback(cardboard.id, TS_RETRY, item->arg);
+            if (!item->callback(cardboard.id, TS_RETRY, item->arg)) {
+                continue;
+            }
             --item->retry;
             ret = safe_queue_enq(que, &cardboard);
             if (ret != 0) {

@@ -39,7 +39,7 @@ typedef int task_t;
 struct task_item {
     bool (*task)(task_t id, void *arg); /**< タスクとして実行される関数. */
                                         /**  タスクの状態変化コールバック. */
-    void (*callback)(task_t id, enum task_status status, void *arg);
+    bool (*callback)(task_t id, enum task_status status, void *arg);
     void *arg;                          /**< タスクに渡される引数. */
     int retry;                          /**< タスク失敗時のリトライ回数. */
 };

@@ -318,9 +318,10 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
                     ++(param->data);
                     return true;
                 }
-                public: static void callback(task_t id, enum task_status status, void *arg) {
+                public: static bool callback(task_t id, enum task_status status, void *arg) {
                     struct param *param = (struct param *)arg;
                     param->statuses[param->num_of_callbacks++] = status;
+                    return true;
                 }
             };
 
@@ -358,9 +359,10 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
                     ++(param->data);
                     return false;
                 }
-                public: static void callback(task_t id, enum task_status status, void *arg) {
+                public: static bool callback(task_t id, enum task_status status, void *arg) {
                     struct param *param = (struct param *)arg;
                     param->statuses[param->num_of_callbacks++] = status;
+                    return true;
                 }
             };
 
@@ -391,10 +393,193 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
             }
         }
 
+        WHEN("ACK でキャンセルするタスクを 1 件追加する") {
+            struct param {
+                task_t id;
+                int data;
+                int num_of_callbacks;
+                enum task_status statuses[10];
+            };
+            class task {
+                public: static bool run(task_t id, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->id = id;
+                    ++(param->data);
+                    return false;
+                }
+                public: static bool callback(task_t id, enum task_status status, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->statuses[param->num_of_callbacks++] = status;
+                    if (status == TS_ACK) {
+                        return false;
+                    }
+                    return true;
+                }
+            };
+
+            struct task_item item = TASK_ITEM_INITIALIZER;
+            struct param param = {-1, 0, 0};
+            item.task = task::run;
+            item.callback = task::callback;
+            item.arg = &param;
+            item.retry = 3;
+            anttq_enq(tq, &item);
+
+            THEN("タスクがキャンセルされること") {
+                /* 非同期処理が終わるのを待つ. */
+                msleep(100);
+
+                REQUIRE(param.id == -1);
+                REQUIRE(param.data == 0);
+                REQUIRE(param.num_of_callbacks == 1);
+                REQUIRE(param.statuses[0] == TS_ACK);
+            }
+        }
+
+        WHEN("RETRY 1 回目でキャンセルするタスクを 1 件追加する") {
+            struct param {
+                task_t id;
+                int data;
+                int num_of_callbacks;
+                enum task_status statuses[10];
+            };
+            class task {
+                public: static bool run(task_t id, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->id = id;
+                    ++(param->data);
+                    return false;
+                }
+                public: static bool callback(task_t id, enum task_status status, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->statuses[param->num_of_callbacks++] = status;
+                    if ((status == TS_RETRY) && (param->num_of_callbacks == 2)) {
+                        return false;
+                    }
+                    return true;
+                }
+            };
+
+            task_t id;
+            struct task_item item = TASK_ITEM_INITIALIZER;
+            struct param param = {-1, 0, 0};
+            item.task = task::run;
+            item.callback = task::callback;
+            item.arg = &param;
+            item.retry = 3;
+            id = anttq_enq(tq, &item);
+
+            THEN("タスクがキャンセルされること") {
+                /* 非同期処理が終わるのを待つ. */
+                msleep(100);
+
+                REQUIRE(param.id == id);
+                REQUIRE(param.data == 1);
+                REQUIRE(param.num_of_callbacks == 2);
+                REQUIRE(param.statuses[0] == TS_ACK);
+                REQUIRE(param.statuses[1] == TS_RETRY);
+            }
+        }
+
+        WHEN("RETRY 2 回目でキャンセルするタスクを 1 件追加する") {
+            struct param {
+                task_t id;
+                int data;
+                int num_of_callbacks;
+                enum task_status statuses[10];
+            };
+            class task {
+                public: static bool run(task_t id, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->id = id;
+                    ++(param->data);
+                    return false;
+                }
+                public: static bool callback(task_t id, enum task_status status, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->statuses[param->num_of_callbacks++] = status;
+                    if ((status == TS_RETRY) && (param->num_of_callbacks == 4)) {
+                        return false;
+                    }
+                    return true;
+                }
+            };
+
+            task_t id;
+            struct task_item item = TASK_ITEM_INITIALIZER;
+            struct param param = {-1, 0, 0};
+            item.task = task::run;
+            item.callback = task::callback;
+            item.arg = &param;
+            item.retry = 3;
+            id = anttq_enq(tq, &item);
+
+            THEN("タスクがキャンセルされること") {
+                /* 非同期処理が終わるのを待つ. */
+                msleep(100);
+
+                REQUIRE(param.id == id);
+                REQUIRE(param.data == 2);
+                REQUIRE(param.num_of_callbacks == 4);
+                REQUIRE(param.statuses[0] == TS_ACK);
+                REQUIRE(param.statuses[1] == TS_RETRY);
+                REQUIRE(param.statuses[2] == TS_ACK);
+                REQUIRE(param.statuses[3] == TS_RETRY);
+            }
+        }
+
+        WHEN("RETRY 3 回目でキャンセルするタスクを 1 件追加する") {
+            struct param {
+                task_t id;
+                int data;
+                int num_of_callbacks;
+                enum task_status statuses[10];
+            };
+            class task {
+                public: static bool run(task_t id, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->id = id;
+                    ++(param->data);
+                    return false;
+                }
+                public: static bool callback(task_t id, enum task_status status, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    param->statuses[param->num_of_callbacks++] = status;
+                    if ((status == TS_RETRY) && (param->num_of_callbacks == 6)) {
+                        return false;
+                    }
+                    return true;
+                }
+            };
+
+            task_t id;
+            struct task_item item = TASK_ITEM_INITIALIZER;
+            struct param param = {-1, 0, 0};
+            item.task = task::run;
+            item.callback = task::callback;
+            item.arg = &param;
+            item.retry = 3;
+            id = anttq_enq(tq, &item);
+
+            THEN("タスクがキャンセルされること") {
+                /* 非同期処理が終わるのを待つ. */
+                msleep(100);
+
+                REQUIRE(param.id == id);
+                REQUIRE(param.data == 3);
+                REQUIRE(param.num_of_callbacks == 6);
+                REQUIRE(param.statuses[0] == TS_ACK);
+                REQUIRE(param.statuses[1] == TS_RETRY);
+                REQUIRE(param.statuses[2] == TS_ACK);
+                REQUIRE(param.statuses[3] == TS_RETRY);
+                REQUIRE(param.statuses[4] == TS_ACK);
+                REQUIRE(param.statuses[5] == TS_RETRY);
+            }
+        }
+
         anttq_term(tq);
     }
 }
-
 
 SCENARIO("タスク識別子が正しく反映されていること", "[taskq][run][id]") {
     GIVEN("タスクキューを容量 10, ワーカー 1 で初期化する") {
@@ -420,7 +605,6 @@ SCENARIO("タスク識別子が正しく反映されていること", "[taskq][r
                 item.arg = &param[i];
                 id[i] = anttq_enq(tq, &item);
             }
-            anttq_show_tasks(tq);
 
             THEN("タスク状態のコールバックが適宜呼ばれること") {
                 /* 非同期処理が終わるのを待つ. */
