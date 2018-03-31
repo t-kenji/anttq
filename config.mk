@@ -11,6 +11,12 @@ NODEBUG = 0
 ## Header direcotyr of Catch2 test framework.
 CATCH2_DIR ?=
 
+## Doxygen options.
+DOXY_PROJECT = "AntTQ"
+DOXY_BRIEF = "AntTQ: Task Queue for Embedded"
+DOXY_OUTPUT = doxygen
+DOXY_SOURCES = include src
+
 CC = $(CROSS_COMPILE)gcc
 CXX = $(CROSS_COMPILE)g++
 LD = $(CROSS_COMPILE)ld

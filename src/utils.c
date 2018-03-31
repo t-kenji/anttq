@@ -1,8 +1,11 @@
-/** @file   utils.h
+/** @file   utils.c
  *  @brief  便利な機能を提供する.
  *
  *  @author t-kenji <protect.2501@gmail.com>
  *  @date   2018-03-24 新規作成.
+ *  @copyright  Copyright (c) 2018 t-kenji
+ *
+ *  This code is licensed under the MIT License.
  */
 #include "utils.h"
 #include "debug.h"
@@ -89,7 +92,7 @@ int safe_queue_deq(struct safe_queue *que, bool wait_for, void *payload)
     int ret;
 
     pthread_mutex_lock(&que->mutex);
-    pthread_cleanup_push(pthread_mutex_unlock, &que->mutex);
+    pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
     if (wait_for) {
         while (queue_count(que->que) == 0) {
             pthread_cond_wait(&que->inqueue, &que->mutex);
@@ -118,7 +121,7 @@ int safe_queue_to_array(struct safe_queue *que, void **array, size_t *count)
     int ret;
 
     pthread_mutex_lock(&que->mutex);
-    pthread_cleanup_push(pthread_mutex_unlock, &que->mutex);
+    pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
     ret = queue_to_array(que->que, array, count);
     pthread_mutex_unlock(&que->mutex);
     pthread_cleanup_pop(0);
