@@ -97,8 +97,14 @@ int safe_queue_enqueue(struct safe_queue *que, void *payload)
  */
 int safe_queue_dequeue(struct safe_queue *que, bool wait_for, void *payload)
 {
+    ssize_t payload_bytes = list_payload_bytes(que->list);
     ITER iter;
     int ret;
+
+    if (payload_bytes < 1) {
+        errno = EINVAL;
+        return -1;
+    }
 
     pthread_mutex_lock(&que->mutex);
     pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
@@ -108,7 +114,7 @@ int safe_queue_dequeue(struct safe_queue *que, bool wait_for, void *payload)
         }
     }
     iter = list_iter(que->list);
-    memcpy(payload, iter_get_payload(iter), list_payload_bytes(que->list));
+    memcpy(payload, iter_get_payload(iter), payload_bytes);
     list_remove(que->list, iter);
     ret = list_count(que->list);
     pthread_mutex_unlock(&que->mutex);
