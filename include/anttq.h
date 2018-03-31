@@ -71,7 +71,12 @@ void anttq_term(struct task_queue *tq);
 /**
  *  タスクを予約する.
  */
-task_t anttq_enq(struct task_queue *tq, struct task_item *item);
+task_t anttq_enqueue(struct task_queue *tq, struct task_item *item);
+
+/**
+ *  タスクをキャンセルする.
+ */
+int anttq_delete(struct task_queue *tq, task_t id);
 
 /**
  *  現在のタスクをダンプする.

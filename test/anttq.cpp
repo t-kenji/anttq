@@ -67,7 +67,7 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
             int param = 0x55;
             item.task = task::run;
             item.arg = &param;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -101,15 +101,15 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
 
             item.task = task::run;
             item.arg = &param1;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -148,15 +148,15 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
 
             item.task = task::run;
             item.arg = &param1;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -195,15 +195,15 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
 
             item.task = task::run;
             item.arg = &param1;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -240,7 +240,7 @@ SCENARIO("タスクの失敗時にリトライできること", "[taskq][run][re
             item.task = task::run;
             item.arg = &param;
             item.retry = 3;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
 
             THEN("3 回のリトライが行われること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -274,15 +274,15 @@ SCENARIO("タスクの失敗時にリトライできること", "[taskq][run][re
             item.task = task::run;
             item.arg = &param1;
             item.retry = 3;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enq(tq, &item) >= 0);
+            REQUIRE(anttq_enqueue(tq, &item) >= 0);
 
             THEN("3 回のリトライが行われること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -331,7 +331,7 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
             item.task = task::run;
             item.callback = task::callback;
             item.arg = &param;
-            id = anttq_enq(tq, &item);
+            id = anttq_enqueue(tq, &item);
 
             THEN("タスク状態のコールバックが適宜呼ばれること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -373,7 +373,7 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
             item.callback = task::callback;
             item.arg = &param;
             item.retry = 3;
-            id = anttq_enq(tq, &item);
+            id = anttq_enqueue(tq, &item);
 
             THEN("タスク状態のコールバックが適宜呼ばれること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -423,7 +423,7 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
             item.callback = task::callback;
             item.arg = &param;
             item.retry = 3;
-            anttq_enq(tq, &item);
+            anttq_enqueue(tq, &item);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -467,7 +467,7 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
             item.callback = task::callback;
             item.arg = &param;
             item.retry = 3;
-            id = anttq_enq(tq, &item);
+            id = anttq_enqueue(tq, &item);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -512,7 +512,7 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
             item.callback = task::callback;
             item.arg = &param;
             item.retry = 3;
-            id = anttq_enq(tq, &item);
+            id = anttq_enqueue(tq, &item);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -559,7 +559,7 @@ SCENARIO("タスク状態がコールバックで通知されること", "[taskq
             item.callback = task::callback;
             item.arg = &param;
             item.retry = 3;
-            id = anttq_enq(tq, &item);
+            id = anttq_enqueue(tq, &item);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -603,10 +603,60 @@ SCENARIO("タスク識別子が正しく反映されていること", "[taskq][r
             item.task = task::run;
             for (int i = 0; i < 10; ++i) {
                 item.arg = &param[i];
-                id[i] = anttq_enq(tq, &item);
+                id[i] = anttq_enqueue(tq, &item);
             }
 
-            THEN("タスク状態のコールバックが適宜呼ばれること") {
+            THEN("タスク識別子が呼び出し側, タスク側で一致すること") {
+                /* 非同期処理が終わるのを待つ. */
+                msleep(100);
+
+                for (int i = 0; i < 10; ++i) {
+                    REQUIRE(param[i].id == id[i]);
+                }
+            }
+        }
+
+        anttq_term(tq);
+    }
+}
+
+SCENARIO("タスク削除できること", "[taskq][delete]") {
+    GIVEN("タスクキューを容量 10, ワーカー 1 で初期化する") {
+        struct task_queue *tq = anttq_init(10, 1);
+
+        WHEN("成功するタスクを 10 件追加し, 削除する") {
+            struct param {
+                task_t id;
+            };
+            class task {
+                public: static bool run(task_t id, void *arg) {
+                    struct param *param = (struct param *)arg;
+                    msleep(5);
+                    param->id = id;
+                    return true;
+                }
+            };
+
+            task_t id[10];
+            struct task_item item = TASK_ITEM_INITIALIZER;
+            struct param param[10] = {-1};
+            item.task = task::run;
+            for (int i = 0; i < 10; ++i) {
+                item.arg = &param[i];
+                id[i] = anttq_enqueue(tq, &item);
+            }
+            REQUIRE(anttq_delete(tq, id[1]) == 0);
+            id[1] = 0;
+            REQUIRE(anttq_delete(tq, id[3]) == 0);
+            id[3] = 0;
+            REQUIRE(anttq_delete(tq, id[5]) == 0);
+            id[5] = 0;
+            REQUIRE(anttq_delete(tq, id[7]) == 0);
+            id[7] = 0;
+            REQUIRE(anttq_delete(tq, id[9]) == 0);
+            id[9] = 0;
+
+            THEN("削除できること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 

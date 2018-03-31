@@ -16,10 +16,16 @@
 #include "collections.h"
 
 /**
+ *  キューの比較関数型.
+ */
+typedef bool (*COMPARATOR)(const void *, const void *);
+
+/**
  *  スレッドセーフなキュー構造体.
  */
 struct safe_queue {
-    QUEUE que;              /**< キュー本体 */
+    LIST list;              /**< キュー本体 */
+    COMPARATOR compare;     /**< キュー操作用の比較関数. */
     pthread_mutex_t mutex;  /**< アクセス制御用ミューテックス. */
     pthread_cond_t inqueue; /**< エンキュー操作通知用の条件変数. */
 };
@@ -29,7 +35,8 @@ struct safe_queue {
  */
 #define SAFE_QUEUE_INITIALIZER              \
     (struct safe_queue){                    \
-        .que = NULL,                        \
+        .list = NULL,                       \
+        .compare = NULL,                    \
         .mutex = PTHREAD_MUTEX_INITIALIZER, \
         .inqueue = PTHREAD_COND_INITIALIZER \
     }
@@ -39,7 +46,8 @@ struct safe_queue {
  */
 int safe_queue_init(struct safe_queue *que,
                     size_t payload_bytes,
-                    size_t capacity);
+                    size_t capacity,
+                    COMPARATOR compare);
 
 /**
  *  キューを解放する.
@@ -49,12 +57,17 @@ void safe_queue_release(struct safe_queue *que);
 /**
  *  エンキューする.
  */
-int safe_queue_enq(struct safe_queue *que, void *payload);
+int safe_queue_enqueue(struct safe_queue *que, void *payload);
 
 /**
  *  デキューする.
  */
-int safe_queue_deq(struct safe_queue *que, bool wait_for, void *payload);
+int safe_queue_dequeue(struct safe_queue *que, bool wait_for, void *payload);
+
+/**
+ *  削除する.
+ */
+int safe_queue_remove(struct safe_queue *que, const void *target);
 
 /**
  *  現在のキューを配列にコピーして取得する.

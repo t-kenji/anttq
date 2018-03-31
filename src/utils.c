@@ -7,34 +7,42 @@
  *
  *  This code is licensed under the MIT License.
  */
+#include <string.h>
+#include <errno.h>
+
 #include "utils.h"
 #include "debug.h"
 
 /**
  *  @details    キューを初期化し, 排他制御用のリソースを初期化する.
+ *              削除を実現するため, 内部ではキューは @ref LIST で表現する.
  *
  *  @param      [out]   que             初期化対象のキューオブジェクト.
  *  @param      [in]    payload_bytes   データ部のサイズ.
  *  @param      [in]    capacity        キューの容量.
+ *  @param      [in]    compare         キュー操作用の比較関数.
  *  @return     成功時は, 0 が返り, @c que が初期化される.
  *              失敗時は, -1 が返り, errno が適切に設定される.
  *  @pre        @c que の非 NULL は上位で保証すること.
  */
 int safe_queue_init(struct safe_queue *que,
                     size_t payload_bytes,
-                    size_t capacity)
+                    size_t capacity,
+                    COMPARATOR compare)
 {
     *que = SAFE_QUEUE_INITIALIZER;
-    que->que = queue_init(payload_bytes, capacity);
-    if (que->que == NULL) {
+    que->list = list_init(payload_bytes, capacity);
+    if (que->list == NULL) {
         return -1;
     }
+    que->compare = compare;
+
     return 0;
 }
 
 /**
  *  @details    排他を行い, キューを解放する.
- *              @ref safe_queue_deq で待っているスレッドは再開させる.
+ *              @ref safe_queue_dequeue で待っているスレッドは再開させる.
  *
  *  @param      [in,out]    que     キューオブジェクト.
  *  @pre        @c que の非 NULL は上位で保証すること.
@@ -42,10 +50,10 @@ int safe_queue_init(struct safe_queue *que,
 void safe_queue_release(struct safe_queue *que)
 {
     pthread_mutex_lock(&que->mutex);
-    queue_release(que->que);
-    que->que = NULL;
-    pthread_cond_broadcast(&que->inqueue);
+    list_release(que->list);
+    que->list = NULL;
     pthread_mutex_unlock(&que->mutex);
+    pthread_cond_broadcast(&que->inqueue);
 }
 
 /**
@@ -60,12 +68,12 @@ void safe_queue_release(struct safe_queue *que)
  *  @pre        @c payload の非 NULL および, データ部以上のサイズを
  *              確保していることは上位で保証すること.
  */
-int safe_queue_enq(struct safe_queue *que, void *payload)
+int safe_queue_enqueue(struct safe_queue *que, void *payload)
 {
     void *ret;
 
     pthread_mutex_lock(&que->mutex);
-    ret = queue_enq(que->que, payload);
+    ret = list_insert(que->list, -1, payload);
     pthread_mutex_unlock(&que->mutex);
     pthread_cond_signal(&que->inqueue);
 
@@ -87,18 +95,61 @@ int safe_queue_enq(struct safe_queue *que, void *payload)
  *  @pre        @c payload の非 NULL および, データ部以上のサイズを
  *              確保していることは上位で保証すること.
  */
-int safe_queue_deq(struct safe_queue *que, bool wait_for, void *payload)
+int safe_queue_dequeue(struct safe_queue *que, bool wait_for, void *payload)
 {
+    ITER iter;
     int ret;
 
     pthread_mutex_lock(&que->mutex);
     pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
     if (wait_for) {
-        while (queue_count(que->que) == 0) {
+        while (list_count(que->list) == 0) {
             pthread_cond_wait(&que->inqueue, &que->mutex);
         }
     }
-    ret = queue_deq(que->que, payload);
+    iter = list_iter(que->list);
+    memcpy(payload, iter_get_payload(iter), list_payload_bytes(que->list));
+    list_remove(que->list, iter);
+    ret = list_count(que->list);
+    pthread_mutex_unlock(&que->mutex);
+    pthread_cleanup_pop(0);
+
+    return ret;
+}
+
+/**
+ *  @details    キューから指定のデータを削除する.
+ *              @ref COMPARATOR が未設定の場合も, 失敗扱いとする.
+ *
+ *  @param      [in]    que     キューオブジェクト.
+ *  @param      [in]    target  削除対象のデータ.
+ *  @return     成功時は, 0 が返る.
+ *              失敗時は, -1 が返り, errno が適切に設定される.
+ */
+int safe_queue_remove(struct safe_queue *que, const void *target)
+{
+    ITER iter;
+    int ret;
+
+    if (que->compare == NULL) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    pthread_mutex_lock(&que->mutex);
+    pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
+    for (iter = list_iter(que->list); iter != NULL; iter = iter_next(iter)) {
+        if (que->compare(target, iter_get_payload(iter))) {
+            break;
+        }
+    }
+    if (iter != NULL) {
+        list_remove(que->list, iter);
+        ret = 0;
+    } else {
+        errno = ENOENT;
+        ret = -1;
+    }
     pthread_mutex_unlock(&que->mutex);
     pthread_cleanup_pop(0);
 
@@ -122,7 +173,7 @@ int safe_queue_to_array(struct safe_queue *que, void **array, size_t *count)
 
     pthread_mutex_lock(&que->mutex);
     pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
-    ret = queue_to_array(que->que, array, count);
+    ret = list_to_array(que->list, array, count);
     pthread_mutex_unlock(&que->mutex);
     pthread_cleanup_pop(0);
 

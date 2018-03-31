@@ -77,6 +77,23 @@ struct task_queue {
     (struct task_queue)TASK_QUEUE_HELPER((num))
 
 /**
+ *  タスク削除用の比較関数.
+ *
+ *  タスク識別子の比較を行う.
+ *
+ *  @param  [in]    a       削除対象データ.
+ *  @param  [in]    b       リスト上のデータ.
+ *  @return 一致した場合は, true を返し, 不一致の場合は, false を返す.
+ */
+static bool task_comparator(const void *a, const void *b)
+{
+    const struct task_item_inner *target = a;
+    const struct task_item_inner *item = b;
+
+    return (target->id == item->id);
+}
+
+/**
  *  何もしないタスク状態変化コールバック.
  *
  *  @param  [in]    id      タスク識別子.
@@ -127,7 +144,7 @@ static void *anttq_worker(void *arg)
         pthread_testcancel();
 
         cardboard = TASK_ITEM_INNER_INITIALIZER;
-        safe_queue_deq(que, true, &cardboard);
+        safe_queue_dequeue(que, true, &cardboard);
 
         item = &cardboard.item;
         if (!item->callback(cardboard.id, TS_ACK, item->arg)) {
@@ -139,7 +156,7 @@ static void *anttq_worker(void *arg)
                 continue;
             }
             --item->retry;
-            ret = safe_queue_enq(que, &cardboard);
+            ret = safe_queue_enqueue(que, &cardboard);
             if (ret != 0) {
                 item->callback(cardboard.id, TS_FAIL, item->arg);
             }
@@ -187,7 +204,8 @@ struct task_queue *anttq_init(size_t capacity, int workers)
 
     ret = safe_queue_init(&tq->que,
                           sizeof(struct task_item_inner),
-                          capacity);
+                          capacity,
+                          task_comparator);
     if (ret != 0) {
         anttq_term(tq);
         return NULL;
@@ -237,7 +255,7 @@ void anttq_term(struct task_queue *tq)
  *  @return     成功時は, 予約したタスクの識別子が返る.
  *              失敗時は, -1 が返り, errno が適切に設定される.
  */
-task_t anttq_enq(struct task_queue *tq, struct task_item *item)
+task_t anttq_enqueue(struct task_queue *tq, struct task_item *item)
 {
     struct task_item_inner cardboard;
     int ret;
@@ -256,7 +274,7 @@ task_t anttq_enq(struct task_queue *tq, struct task_item *item)
 
     cardboard.id = anttq_update_total_tasks(tq) % INT_MAX;
     cardboard.item = *item;
-    ret = safe_queue_enq(&tq->que, &cardboard);
+    ret = safe_queue_enqueue(&tq->que, &cardboard);
     if (ret != 0) {
         return -1;
     }
@@ -265,6 +283,28 @@ task_t anttq_enq(struct task_queue *tq, struct task_item *item)
     sched_yield();
 
     return cardboard.id;
+}
+
+/**
+ *  @details    @c id のタスクをキューから削除する.
+ *              @c id がすでにキューから取り出されている場合は削除できない.
+ *
+ *  @param      [in,out]    tq      Task Queue オブジェクト.
+ *  @param      [in]    id  削除対象のタスク識別子.
+ *  @return     成功時は, 0 が返る.
+ *              失敗時は, -1 が返り, errno が適切に設定される.
+ */
+int anttq_delete(struct task_queue *tq, task_t id)
+{
+    struct task_item_inner target;
+
+    if ((tq == NULL) || (id < 0)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    target.id = id;
+    return safe_queue_remove(&tq->que, &target);
 }
 
 /**
