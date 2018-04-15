@@ -7,12 +7,20 @@
  *
  *  This code is licensed under the MIT License.
  */
+/** @example    async_job.c
+ *  非同期ジョブをテーマにした実装例.
+ */
 #ifndef __ANTTQ_TASKQ_H__
 #define __ANTTQ_TASKQ_H__
 
 #include <stdbool.h>
 
 struct task_queue;
+
+/** @addtogroup cat_anttq Task Queue
+ *  Task Queue を構成するモジュール.
+ *  @{
+ */
 
 /**
  *  タスク処理状態列挙子.
@@ -29,7 +37,7 @@ enum task_status {
  *  タスク識別子.
  *
  *  タスクの予約時に発行されるタスクの識別子.
- *  初期値は -1 となる.
+ *  無効値は -1 とする.
  */
 typedef int task_t;
 
@@ -41,8 +49,8 @@ typedef int task_t;
  */
 struct task_item {
     bool (*task)(task_t id, void *arg); /**< タスクとして実行される関数. */
-                                        /**  タスクの状態変化コールバック. */
     bool (*callback)(task_t id, enum task_status status, void *arg);
+                                        /**< タスクの状態変化コールバック. */
     void *arg;                          /**< タスクに渡される引数. */
     int retry;                          /**< タスク失敗時のリトライ回数. */
 };
@@ -59,12 +67,12 @@ struct task_item {
     }
 
 /**
- *  AntTQ の初期化を行う.
+ *  Task Queue の初期化を行う.
  */
 struct task_queue *anttq_init(size_t capacity, int workers);
 
 /**
- *  AntTQ を破棄する.
+ *  Task Queue を破棄する.
  */
 void anttq_term(struct task_queue *tq);
 
@@ -82,5 +90,7 @@ int anttq_delete(struct task_queue *tq, task_t id);
  *  現在のタスクをダンプする.
  */
 void anttq_show_tasks(struct task_queue *tq);
+
+/** @} */
 
 #endif /* __ANTTQ_TASKQ_H__ */

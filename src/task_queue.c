@@ -7,6 +7,10 @@
  *
  *  This code is licensed under the MIT License.
  */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE /* for pthread_spinlock_t */
+#endif
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -77,13 +81,13 @@ struct task_queue {
     (struct task_queue)TASK_QUEUE_HELPER((num))
 
 /**
- *  タスク削除用の比較関数.
- *
- *  タスク識別子の比較を行う.
+ *  タスク削除対象を特定するために, タスク識別子の比較を行う.
  *
  *  @param  [in]    a       削除対象データ.
  *  @param  [in]    b       リスト上のデータ.
  *  @return 一致した場合は, true を返し, 不一致の場合は, false を返す.
+ *  @pre    @c a の非 NULL は呼び出し側で保証すること.
+ *  @pre    @c b の非 NULL は呼び出し側で保証すること.
  */
 static bool task_comparator(const void *a, const void *b)
 {
@@ -103,6 +107,10 @@ static bool task_comparator(const void *a, const void *b)
  */
 static bool null_callback(task_t id, enum task_status status, void *arg)
 {
+    UNUSED_VARIABLE(id);
+    UNUSED_VARIABLE(status);
+    UNUSED_VARIABLE(arg);
+
     return true;
 }
 
@@ -111,14 +119,15 @@ static bool null_callback(task_t id, enum task_status status, void *arg)
  *
  *  @param      [in,out]    tq  Task Queue オブジェクト.
  *  @return     タスクの総数が返る.
+ *  @pre        @c tq の非 NULL は呼び出し側で保証する.
  *  @warning    変数がオーバーフローした場合は 0 に戻る.
  */
 static uint32_t anttq_update_total_tasks(struct task_queue *tq)
 {
     uint32_t num;
-    pthread_spin_lock(&tq->spinlock);
-    num = ++tq->total_tasks;
-    pthread_spin_unlock(&tq->spinlock);
+    synchronized (&tq->spinlock) {
+        num = ++tq->total_tasks;
+    }
     return num;
 }
 
@@ -131,6 +140,7 @@ static uint32_t anttq_update_total_tasks(struct task_queue *tq)
  *  処理を中断する.
  *
  *  @param  [in]    arg タスク固有引数.
+ *  @pre    @c arg の非 NULL は呼び出し側で保証すること.
  */
 static void *anttq_worker(void *arg)
 {
@@ -184,7 +194,7 @@ struct task_queue *anttq_init(size_t capacity, int workers)
     int ret;
     int i;
 
-    if ((capacity <= 0) || (workers <= 0) || (WORKER_MAX < workers)) {
+    if ((capacity == 0) || (workers <= 0) || (WORKER_MAX < workers)) {
         errno = EINVAL;
         return NULL;
     }
@@ -317,6 +327,10 @@ void anttq_show_tasks(struct task_queue *tq)
     struct task_item_inner *items;
     size_t count;
     int i;
+
+    if (tq == NULL) {
+        return;
+    }
 
     safe_queue_to_array(&tq->que, (void **)&items, &count);
     for (i = 0; i < count; ++i) {

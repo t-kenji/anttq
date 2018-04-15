@@ -7,6 +7,9 @@
  *
  *  This code is licensed under the MIT License.
  */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE /* for pthread_spinlock_t */
+#endif
 #include <string.h>
 #include <errno.h>
 
@@ -23,7 +26,7 @@
  *  @param      [in]    compare         キュー操作用の比較関数.
  *  @return     成功時は, 0 が返り, @c que が初期化される.
  *              失敗時は, -1 が返り, errno が適切に設定される.
- *  @pre        @c que の非 NULL は上位で保証すること.
+ *  @pre        @c que の非 NULL は呼び出し側で保証すること.
  */
 int safe_queue_init(struct safe_queue *que,
                     size_t payload_bytes,
@@ -45,14 +48,14 @@ int safe_queue_init(struct safe_queue *que,
  *              @ref safe_queue_dequeue で待っているスレッドは再開させる.
  *
  *  @param      [in,out]    que     キューオブジェクト.
- *  @pre        @c que の非 NULL は上位で保証すること.
+ *  @pre        @c que の非 NULL は呼び出し側で保証すること.
  */
 void safe_queue_release(struct safe_queue *que)
 {
-    pthread_mutex_lock(&que->mutex);
-    list_release(que->list);
-    que->list = NULL;
-    pthread_mutex_unlock(&que->mutex);
+    lock (&que->mutex) {
+        list_release(que->list);
+        que->list = NULL;
+    }
     pthread_cond_broadcast(&que->inqueue);
 }
 
@@ -64,17 +67,17 @@ void safe_queue_release(struct safe_queue *que)
  *  @param      [in]        payload 積むデータ.
  *  @return     成功時は, 0 が返る.
  *              失敗時は, -1 が返り, errno が適切に設定される.
- *  @pre        @c que の非 NULL は上位で保証すること.
+ *  @pre        @c que の非 NULL は呼び出し側で保証すること.
  *  @pre        @c payload の非 NULL および, データ部以上のサイズを
- *              確保していることは上位で保証すること.
+ *              確保していることは呼び出し側で保証すること.
  */
 int safe_queue_enqueue(struct safe_queue *que, void *payload)
 {
     void *ret;
 
-    pthread_mutex_lock(&que->mutex);
-    ret = list_insert(que->list, -1, payload);
-    pthread_mutex_unlock(&que->mutex);
+    lock (&que->mutex) {
+        ret = list_insert(que->list, -1, payload);
+    }
     pthread_cond_signal(&que->inqueue);
 
     return (ret != NULL) ? 0 : -1;
@@ -91,14 +94,13 @@ int safe_queue_enqueue(struct safe_queue *que, void *payload)
  *  @return     成功時は, キューの残要素数が返り, @c payload にデータ部が
  *              コピーされる.
  *              キューが空 or 失敗時は, -1 が返り, errno が適切に設定される.
- *  @pre        @c que の非 NULL は上位で保証すること.
+ *  @pre        @c que の非 NULL は呼び出し側で保証すること.
  *  @pre        @c payload の非 NULL および, データ部以上のサイズを
- *              確保していることは上位で保証すること.
+ *              確保していることは呼び出し側で保証すること.
  */
 int safe_queue_dequeue(struct safe_queue *que, bool wait_for, void *payload)
 {
     ssize_t payload_bytes = list_payload_bytes(que->list);
-    ITER iter;
     int ret;
 
     if (payload_bytes < 1) {
@@ -106,19 +108,17 @@ int safe_queue_dequeue(struct safe_queue *que, bool wait_for, void *payload)
         return -1;
     }
 
-    pthread_mutex_lock(&que->mutex);
-    pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
-    if (wait_for) {
-        while (list_count(que->list) == 0) {
-            pthread_cond_wait(&que->inqueue, &que->mutex);
+    lock (&que->mutex) {
+        if (wait_for) {
+            while (list_count(que->list) == 0) {
+                pthread_cond_wait(&que->inqueue, &que->mutex);
+            }
         }
+        ITER iter = list_iter(que->list);
+        memcpy(payload, iter_get_payload(iter), payload_bytes);
+        list_remove(que->list, iter);
+        ret = list_count(que->list);
     }
-    iter = list_iter(que->list);
-    memcpy(payload, iter_get_payload(iter), payload_bytes);
-    list_remove(que->list, iter);
-    ret = list_count(que->list);
-    pthread_mutex_unlock(&que->mutex);
-    pthread_cleanup_pop(0);
 
     return ret;
 }
@@ -142,22 +142,20 @@ int safe_queue_remove(struct safe_queue *que, const void *target)
         return -1;
     }
 
-    pthread_mutex_lock(&que->mutex);
-    pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
-    for (iter = list_iter(que->list); iter != NULL; iter = iter_next(iter)) {
-        if (que->compare(target, iter_get_payload(iter))) {
-            break;
+    lock (&que->mutex) {
+        for (iter = list_iter(que->list); iter != NULL; iter = iter_next(iter)) {
+            if (que->compare(target, iter_get_payload(iter))) {
+                break;
+            }
+        }
+        if (iter == NULL) {
+            errno = ENOENT;
+            ret = -1;
+        } else {
+            list_remove(que->list, iter);
+            ret = 0;
         }
     }
-    if (iter != NULL) {
-        list_remove(que->list, iter);
-        ret = 0;
-    } else {
-        errno = ENOENT;
-        ret = -1;
-    }
-    pthread_mutex_unlock(&que->mutex);
-    pthread_cleanup_pop(0);
 
     return ret;
 }
@@ -171,17 +169,18 @@ int safe_queue_remove(struct safe_queue *que, const void *target)
  *  @return     成功時は, 0 が返り, @c array に確保された配列のポインタを
  *              設定する.
  *              失敗時は, -1 が返り, errno が適切に設定される.
+ *  @pre        @c que の非 NULL は呼び出し側で保証すること.
+ *  @pre        @c array の非 NULL は呼び出し側で保証すること.
+ *  @pre        @c count の非 NULL は呼び出し側で保証すること.
  *  @warning    スレッドセーフではない.
  */
 int safe_queue_to_array(struct safe_queue *que, void **array, size_t *count)
 {
     int ret;
 
-    pthread_mutex_lock(&que->mutex);
-    pthread_cleanup_push((void (*)(void *))pthread_mutex_unlock, &que->mutex);
-    ret = list_to_array(que->list, array, count);
-    pthread_mutex_unlock(&que->mutex);
-    pthread_cleanup_pop(0);
+    lock (&que->mutex) {
+        ret = list_to_array(que->list, array, count);
+    }
 
     return ret;
 }
