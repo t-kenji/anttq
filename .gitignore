@@ -2,10 +2,21 @@
 
 *.d
 *.o
-*.a
-*_test
+*.a*
+*.so*
+/test/anttq_utest
+/example/async_job
 
-*.plist
-Doxygen.conf
-/doxygen
+Doxyfile
+/doxygen/
+
+/coverage/
+*.gcda
+*.gcno
+
 /cov-int
+
+GPATH
+GRTAGS
+GTAGS
+

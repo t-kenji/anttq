@@ -5,7 +5,7 @@
  *  @date   2018-03-22 新規作成.
  */
 #define CATCH_CONFIG_RUNNER
-#include <catch.hpp>
+#include <catch2/catch.hpp>
 
 /**
  *  スタートアップ.

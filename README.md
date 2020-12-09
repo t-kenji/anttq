@@ -33,9 +33,3 @@ Generate doxygen document
 $ make doc
 ```
 
-run clang static analyer
-------------------------
-
-```
-$ scan-build make NODEBUG=1
-```

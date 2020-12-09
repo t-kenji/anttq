@@ -1,45 +1,129 @@
 # makefile for anttq.
 
-include ./config.mk
+ifeq ($(MAKELEVEL),0)
 
-.PHONY: all test example doc cppcheck oclint flawfinder clean
+export ROOTDIR := $(PWD)
 
-all:
-	@make -C src
+include $(ROOTDIR)/config.mk
 
-test: all
-	@make -C test
-	@./test/$(NAME)_test $(TAGS)
+TARGETS := all build install clean distclean
+ifeq ($(HAS_TEST),1)
+TARGETS += build-test clean-test test
+endif
+ifeq ($(HAS_EXAMPLE),1)
+TARGETS += build-example clean-example example
+endif
+ifeq ($(HAS_DOC),1)
+TARGETS += doc
+endif
+ifneq ($(shell which cppcheck),)
+TARGETS += cppcheck
+endif
 
-example: all
-	@make -C example
+define MAKE_TARGET
+	@make -f $(ROOTDIR)/Makefile -C $1 --no-print-directory MAKE_OBJS=$2 $3
+endef
 
+.PHONY: $(TARGETS)
+
+default: build
+
+all: build build-test build-example
+
+build:
+	@$(foreach tgt,$(shell ls src/*.mk 2>/dev/null),$(call MAKE_TARGET,src,$(notdir $(tgt)));)
+
+ifeq ($(HAS_TEST),1)
+build-test: build
+	@$(foreach tgt,$(shell ls test/*.mk 2>/dev/null),$(call MAKE_TARGET,test,$(notdir $(tgt)));)
+else
+build-test: ;
+endif
+
+ifeq ($(HAS_EXAMPLE),1)
+build-example: build
+	@$(foreach tgt,$(shell ls example/*.mk 2>/dev/null),$(call MAKE_TARGET,example,$(notdir $(tgt)));)
+else
+build-example: ;
+endif
+
+ifeq ($(HAS_TEST),1)
+test: build-test
+	@test/$(PROJECT)_utest -r compact $(if $(filter $(V),1),-s --durations yes) $(shell echo "$(TAG)" | grep -o -E -e "\w+" | sed -e "s/\(\w\+\)/[\1]/" | tr -d "\n")
+else
+test: ;
+endif
+
+ifeq ($(HAS_EXAMPLE),1)
+example: build-example
+else
+example: ;
+endif
+
+ifeq ($(HAS_DOC),1)
 doc:
-	@sed -e 's/@PROJECT@/$(DOXY_PROJECT)/' \
-	     -e 's/@VERSION@/$(VERSION)/' \
-	     -e 's/@BRIEF@/$(DOXY_BRIEF)/' \
-	     -e 's/@OUTPUT@/$(DOXY_OUTPUT)/' \
-	     -e 's/@SOURCES@/$(DOXY_SOURCES)/' \
-	     Doxygen.conf.in > Doxygen.conf
-	@doxygen Doxygen.conf
+	@sed -e 's|@PROJECT@|$(DOXY_PROJECT)|' \
+	     -e 's|@VERSION@|$(DOXY_VERSION)|' \
+	     -e 's|@BRIEF@|$(DOXY_BRIEF)|' \
+	     -e 's|@OUTPUT@|$(DOXY_OUTPUT)|' \
+	     -e 's|@SOURCES@|$(DOXY_SOURCES)|' \
+	     -e 's|@EXCLUDE@|$(DOXY_EXCLUDE)|' \
+	     -e 's|@EXCLUDE_SYMBOLS@|$(DOXY_EXCLUDE_SYMBOLS)|' \
+	     -e 's|@PREDEFINED@|$(DOXY_PREDEFINED)|' \
+	     -e 's|@README@|README.md|' \
+	     -e 's|@EXTRACT_STATIC@|YES|' \
+	     -e 's|@SHOW_FILES@|YES|' \
+	     -e 's|@SOURCE_BROWSER@|YES|' \
+	     Doxyfile.in > Doxyfile
+	@doxygen Doxyfile
+endif
 
+ifneq ($(shell which cppcheck),)
 cppcheck:
-	@cppcheck --enable=all --suppress=unusedFunction -I./include ./src
+	@make -f $(ROOTDIR)/Makefile -C src --no-print-directory cppcheck
+endif
 
-oclint:
-	@oclint -enable-global-analysis \
-	        -enable-clang-static-analyzer \
-	        -disable-rule=LongLine \
-	        -disable-rule=ShortVariableName \
-	        -disable-rule=UselessParentheses \
-	        $(shell ls ./src/*.c) \
-	        -- -I./src -I./include
+install: install-test install-example
 
-flawfinder:
-	@flawfinder ./include ./src
+ifeq ($(HAS_TEST),1)
+install-test: build-test
+	@install -d $(DESTDIR)/bin
+	install -m 0755 ./test/$(UTEST) $(DESTDIR)/bin
+else
+install-test: ;
+endif
 
-clean:
-	@rm -rf Doxygen.conf $(DOXY_OUTPUT) *.plist
-	@make -C src clean
-	@make -C test clean
-	@make -C example clean
+ifeq ($(HAS_EXAMPLE),1)
+install-example: build-example
+	@install -d $(DESTDIR)/bin
+	install -m 0755 ./example/sample $(DESTDIR)/bin
+else
+install-example: ;
+endif
+
+clean: clean-test clean-example
+	@$(foreach tgt,$(shell ls src/*.mk 2>/dev/null),$(call MAKE_TARGET,src,$(notdir $(tgt)),clean);)
+	@rm -rf Doxyfile $(DOXY_OUTPUT)
+
+ifeq ($(HAS_TEST),1)
+clean-test:
+	@$(foreach tgt,$(shell ls test/*.mk 2>/dev/null),$(call MAKE_TARGET,test,$(notdir $(tgt)),clean);)
+else
+clean-test: ;
+endif
+
+ifeq ($(HAS_EXAMPLE),1)
+clean-example:
+	@$(foreach tgt,$(shell ls example/*.mk 2>/dev/null),$(call MAKE_TARGET,example,$(notdir $(tgt)),clean);)
+else
+clean-example: ;
+endif
+
+distclean: clean-test clean-tool
+	@$(foreach tgt,$(shell ls src/*.mk 2>/dev/null),$(call MAKE_TARGET,src,$(notdir $(tgt)),distclean);)
+	@rm -rf Doxyfile $(DOXY_OUTPUT)
+
+else
+include $(MAKE_OBJS)
+include $(ROOTDIR)/rules.mk
+endif

@@ -1,31 +1,30 @@
-/** @file   anttq.h
- *  @brief  組込み向け Task Queue システム API.
+/** @file       anttq.h
+ *  @brief      API for Task Queue System for Embedded.
  *
- *  @author t-kenji <protect.2501@gmail.com>
- *  @date   2018-03-23 新規作成.
- *  @copyright  Copyright (c) 2018 t-kenji
+ *  @author     t-kenji <protect.2501@gmail.com>
+ *  @date       2018-03-23 newly created.
+ *  @copyright  Copyright (c) 2018-2020 t-kenji
  *
  *  This code is licensed under the MIT License.
  */
 /** @example    async_job.c
  *  非同期ジョブをテーマにした実装例.
  */
-#ifndef __ANTTQ_TASKQ_H__
-#define __ANTTQ_TASKQ_H__
 
-#include <stdbool.h>
+#ifndef __ANTTQ_TASKQUEUE_H__
+#define __ANTTQ_TASKQUEUE_H__
 
-struct task_queue;
+struct TaskQueue;
 
-/** @addtogroup cat_anttq Task Queue
- *  Task Queue を構成するモジュール.
+/** @addtogroup cat_taskqueue Task Queue
+ *  This module compose the Task Queue.
  *  @{
  */
 
 /**
  *  タスク処理状態列挙子.
  */
-enum task_status {
+enum TaskStatus {
     TS_ACK,     /**< タスク処理開始. */
     TS_SUCCESS, /**< タスク処理完了. */
     TS_FAIL,    /**< タスク処理失敗. */
@@ -39,17 +38,17 @@ enum task_status {
  *  タスクの予約時に発行されるタスクの識別子.
  *  無効値は -1 とする.
  */
-typedef int task_t;
+typedef int16_t TaskId;
 
 /**
  *  タスク要素構造体.
  *
- *  @c task は @c arg を引数にして実行される.
- *  @c task が false を返した場合は, 同一タスクが再度エンキューされる.
+ *  @c Task は @c arg を引数にして実行される.
+ *  @c Task が false を返した場合は, 同一タスクが再度エンキューされる.
  */
-struct task_item {
-    bool (*task)(task_t id, void *arg); /**< タスクとして実行される関数. */
-    bool (*callback)(task_t id, enum task_status status, void *arg);
+struct TaskItem {
+    bool (*Task)(TaskId id, void *arg); /**< タスクとして実行される関数. */
+    bool (*Callback)(TaskId id, enum TaskStatus status, void *arg);
                                         /**< タスクの状態変化コールバック. */
     void *arg;                          /**< タスクに渡される引数. */
     int retry;                          /**< タスク失敗時のリトライ回数. */
@@ -59,9 +58,9 @@ struct task_item {
  *  タスク要素構造体の初期化子.
  */
 #define TASK_ITEM_INITIALIZER \
-    (struct task_item){       \
-        .task = NULL,         \
-        .callback = NULL,     \
+    (struct TaskItem){        \
+        .Task = NULL,         \
+        .Callback = NULL,     \
         .arg = NULL,          \
         .retry = 0            \
     }
@@ -69,28 +68,27 @@ struct task_item {
 /**
  *  Task Queue の初期化を行う.
  */
-struct task_queue *anttq_init(size_t capacity, int workers);
+struct TaskQueue *AntTQ_Init(size_t capacity, size_t workers);
 
 /**
  *  Task Queue を破棄する.
  */
-void anttq_term(struct task_queue *tq);
+void AntTQ_Term(struct TaskQueue *self);
+
+int AntTQ_Start(struct TaskQueue *self);
+int AntTQ_Stop(struct TaskQueue *self);
 
 /**
  *  タスクを予約する.
  */
-task_t anttq_enqueue(struct task_queue *tq, struct task_item *item);
+TaskId AntTQ_Enqueue(struct TaskQueue *self, struct TaskItem *item);
 
 /**
  *  タスクをキャンセルする.
  */
-int anttq_delete(struct task_queue *tq, task_t id);
-
-/**
- *  現在のタスクをダンプする.
- */
-void anttq_show_tasks(struct task_queue *tq);
+int AntTQ_Cancel(struct TaskQueue *self, TaskId id);
 
 /** @} */
 
-#endif /* __ANTTQ_TASKQ_H__ */
+#endif /* __ANTTQ_TASKQUEUE_H__ */
+

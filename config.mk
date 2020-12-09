@@ -1,30 +1,58 @@
 # configuration for anttq.
+export
 
-NAME = anttq
-MAJOR_VERSION = 1
-MINOR_VERSION = 0
-REVISION = 0
-VERSION = $(MAJOR_VERSION).$(MINOR_VERSION).$(REVISION)
+# Project options.
+PROJECT := anttq
+MAJOR_VERSION := 2
+MINOR_VERSION := 0
+REVISION := 0
+VERSION := $(MAJOR_VERSION).$(MINOR_VERSION).$(REVISION)
+DESTDIR ?=
 
-NODEBUG = 0
+# Build target.
+#  native: Build for native.
+PLATFORM ?= native
+ENABLE_STATIC := 1
+ENABLE_SHARED := 0
 
-## Header direcotyr of Catch2 test framework.
+# Build type.
+#  release: No debuggable.
+#  debug: Debuggable.
+BUILD_TYPE ?= release
+
+# Test options.
+HAS_TEST := 1
+INTERNAL_TESTABLE ?= 1
+
+# Example options.
+HAS_EXAMPLE := 1
+
+# Documentation options.
+HAS_DOC := 1
+DOXY_PROJECT := "AntTQ"
+DOXY_BRIEF := "AntTQ: Task Queue for Embedded"
+DOXY_VERSION := "2.00"
+DOXY_OUTPUT := doxygen
+DOXY_SOURCES := include src
+
+# Dependencies.
 CATCH2_DIR ?=
 
-## Doxygen options.
-DOXY_PROJECT = "AntTQ"
-DOXY_BRIEF = "AntTQ: Task Queue for Embedded"
-DOXY_OUTPUT = doxygen
-DOXY_SOURCES = include src
+# Debug options.
+NODEBUG ?= 0
+WARN_AS_ERROR ?= 0
+ENABLE_SANITIZER ?= 0
+DISABLE_CCACHE ?= 0
 
-CC = $(CROSS_COMPILE)gcc
-CXX = $(CROSS_COMPILE)g++
-LD = $(CROSS_COMPILE)ld
+# Compile & Link options.
+CSTANDARD ?= c11
+CXXSTANDARD ?= c++14
+EXTRA_CPPFLAGS ?=
+EXTRA_CFLAGS ?=
+EXTRA_CXXFLAGS ?=
+EXTRA_LDFLAGS ?=
+EXTRA_INCS ?= -I$(ROOTDIR)/include
+EXTRA_LDLIBS ?= -lpthread -lrt
 
-V = 0
-Q1 = $(V:1=)
-QCC    = $(Q1:0=@echo '    CC   ' $@;)
-QCXX   = $(Q1:0=@echo '    CXX  ' $@;)
-QLD    = $(Q1:0=@echo '    LD   ' $@;)
-QLINK  = $(Q1:0=@echo '    LINK ' $@;)
-QCLEAN = $(Q1:0=@echo '    CLEAN';)
+# Verbose options.
+V ?= 0

@@ -4,70 +4,86 @@
  *  @author t-kenji <protect.2501@gmail.com>
  *  @date   2018-03-18 新規作成.
  */
-#include <ctime>
-#include <unistd.h>
-#include <catch.hpp>
+
+#include <atomic>
+#include <vector>
+#include <catch2/catch.hpp>
+
+#include "utils.hpp"
 
 extern "C" {
-#include "debug.h"
 #include "anttq.h"
 }
 
-int msleep(int msec)
-{
-    struct timespec req, rem = {msec / 1000, (msec % 1000) * 1000000};
-    int ret;
+#include <cstdio>
 
-    do {
-        req = rem;
-        ret = nanosleep(&req, &rem);
-    } while ((ret == -1) && (errno == EINTR));
+class BitFlags {
+private:
+    std::atomic<uint32_t> *flags_;
 
-    return ret;
-}
+public:
+    BitFlags(size_t width) {
+        flags_ = new std::atomic<uint32_t>[(width / 32) + 1]{};
+    }
 
-SCENARIO("タスクキューが初期化できること", "[taskq][init]") {
+    ~BitFlags() {
+        delete[] flags_;
+    }
+
+    void Set(size_t bit) {
+        flags_[bit >> 5] |= (1 << (bit & 31));
+    }
+
+    void Unset(size_t bit) {
+        flags_[bit >> 5] &= ~(1 << (bit & 31));
+    }
+
+    bool Get(size_t bit) {
+        return !!(flags_[bit >> 5].load() & (1 << (bit & 31)));
+    }
+};
+
+SCENARIO("タスクキューが初期化できること", tags("taskq", "init")) {
     GIVEN("特になし") {
         WHEN("タスクキューを容量 1, ワーカー 1 で初期化する") {
-            struct task_queue *tq = anttq_init(1, 1);
+            struct TaskQueue *tq = AntTQ_Init(1, 1);
 
             THEN("インスタンスが NULL ではないこと") {
                 REQUIRE(tq != NULL);
             }
 
-            anttq_term(tq);
+            AntTQ_Term(tq);
         }
 
         WHEN("タスクキューを容量 5, ワーカー 1 で初期化する") {
-            struct task_queue *tq = anttq_init(5, 1);
+            struct TaskQueue *tq = AntTQ_Init(5, 1);
 
             THEN("インスタンスが NULL ではないこと") {
                 REQUIRE(tq != NULL);
             }
 
-            anttq_term(tq);
+            AntTQ_Term(tq);
         }
     }
 }
 
-SCENARIO("タスクが処理できること", "[taskq][run]") {
+SCENARIO("タスクが処理できること", tags("taskq", "run")) {
     GIVEN("タスクキューを容量 1, ワーカー 1 で初期化する") {
-        struct task_queue *tq = anttq_init(1, 1);
+        struct TaskQueue *tq = AntTQ_Init(1, 1);
+        AntTQ_Start(tq);
 
         WHEN("タスクを 1 件追加する") {
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    int *param = (int *)arg;
-                    *param = 0xAA;
-                    return true;
-                }
+            auto runner = [&](TaskId, void *arg) -> bool {
+                int *param{(int *)arg};
+                *param = 0xAA;
+                return true;
             };
 
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            int param = 0x55;
-            item.task = task::run;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            int param{0x55};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
             item.arg = &param;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -77,39 +93,38 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
             }
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 
     GIVEN("タスクキューを容量 5, ワーカー 1 で初期化する") {
-        struct task_queue *tq = anttq_init(5, 1);
+        struct TaskQueue *tq = AntTQ_Init(5, 1);
+        AntTQ_Start(tq);
 
         WHEN("タスクを 5 件追加する") {
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    int *param = (int *)arg;
-                    *param -= 1;
-                    return true;
-                }
+            auto runner = [&](TaskId, void *arg) -> bool {
+                int *param{(int *)arg};
+                *param -= 1;
+                return true;
             };
 
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            int param1 = 0x11,
-                param2 = 0x22,
-                param3 = 0x33,
-                param4 = 0x44,
-                param5 = 0x55;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            int param1{0x11},
+                param2{0x22},
+                param3{0x33},
+                param4{0x44},
+                param5{0x55};
 
-            item.task = task::run;
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
             item.arg = &param1;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -124,39 +139,38 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
 
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 
     GIVEN("タスクキューを容量 5, ワーカー 3 で初期化する") {
-        struct task_queue *tq = anttq_init(5, 3);
+        struct TaskQueue *tq = AntTQ_Init(5, 3);
+        AntTQ_Start(tq);
 
         WHEN("タスクを 5 件追加する") {
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    int *param = (int *)arg;
-                    *param -= 1;
-                    return true;
-                }
+            auto runner = [&](TaskId, void *arg) -> bool {
+                int *param{(int *)arg};
+                *param -= 1;
+                return true;
             };
 
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            int param1 = 0x11,
-                param2 = 0x22,
-                param3 = 0x33,
-                param4 = 0x44,
-                param5 = 0x55;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            int param1{0x11},
+                param2{0x22},
+                param3{0x33},
+                param4{0x44},
+                param5{0x55};
 
-            item.task = task::run;
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
             item.arg = &param1;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -171,39 +185,38 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
 
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 
     GIVEN("タスクキューを容量 5, ワーカー 5 で初期化する") {
-        struct task_queue *tq = anttq_init(5, 5);
+        struct TaskQueue *tq = AntTQ_Init(5, 5);
+        AntTQ_Start(tq);
 
         WHEN("タスクを 5 件追加する") {
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    int *param = (int *)arg;
-                    *param -= 1;
-                    return true;
-                }
+            auto runner = [&](TaskId, void *arg) -> bool {
+                int *param{(int *)arg};
+                *param -= 1;
+                return true;
             };
 
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            int param1 = 0x11,
-                param2 = 0x22,
-                param3 = 0x33,
-                param4 = 0x44,
-                param5 = 0x55;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            int param1{0x11},
+                param2{0x22},
+                param3{0x33},
+                param4{0x44},
+                param5{0x55};
 
-            item.task = task::run;
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
             item.arg = &param1;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクが呼び出されること") {
                 /* 非同期処理が終わるのを待つ. */
@@ -218,454 +231,412 @@ SCENARIO("タスクが処理できること", "[taskq][run]") {
 
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 }
 
-SCENARIO("タスクの失敗時にリトライできること", "[taskq][run][retry]") {
+SCENARIO("タスクの失敗時にリトライできること", tags("taskq", "run", "retry")) {
     GIVEN("タスクキューを容量 1, ワーカー 1 で初期化する") {
-        struct task_queue *tq = anttq_init(1, 1);
+        struct TaskQueue *tq{AntTQ_Init(1, 1)};
+        AntTQ_Start(tq);
 
         WHEN("失敗するタスクをリトライ 3 回で 1 件追加する") {
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    int *param = (int *)arg;
-                    ++(*param);
-                    return false;
-                }
+            static const int retry_count{3};
+            auto runner = [&](TaskId, void *arg) -> bool {
+                int *param{(int *)arg};
+                ++(*param);
+                return false;
             };
 
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            int param = 0;
-            item.task = task::run;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            int param{0};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
             item.arg = &param;
-            item.retry = 3;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            item.retry = retry_count;
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("3 回のリトライが行われること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param == 4);
+                REQUIRE(param == retry_count + 1);
             }
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 
     GIVEN("タスクキューを容量 5, ワーカー 3 で初期化する") {
-        struct task_queue *tq = anttq_init(5, 3);
+        struct TaskQueue *tq{AntTQ_Init(5, 3)};
+        AntTQ_Start(tq);
 
         WHEN("失敗するタスクをリトライ 3 回で 5 件追加する") {
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    int *param = (int *)arg;
-                    ++(*param);
-                    return false;
-                }
+            static const int retry_count{3};
+            auto runner = [&](TaskId, void *arg) -> bool {
+                int *param{(int *)arg};
+                ++(*param);
+                return false;
             };
 
-            struct task_item item = TASK_ITEM_INITIALIZER;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
             int param1 = 0,
                 param2 = 0,
                 param3 = 0,
                 param4 = 0,
                 param5 = 0;
-            item.task = task::run;
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            item.retry = retry_count;
             item.arg = &param1;
-            item.retry = 3;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param2;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param3;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param4;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
             item.arg = &param5;
-            REQUIRE(anttq_enqueue(tq, &item) >= 0);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("3 回のリトライが行われること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param1== 4);
-                REQUIRE(param2== 4);
-                REQUIRE(param3== 4);
-                REQUIRE(param4== 4);
-                REQUIRE(param5== 4);
+                REQUIRE(param1== retry_count + 1);
+                REQUIRE(param2== retry_count + 1);
+                REQUIRE(param3== retry_count + 1);
+                REQUIRE(param4== retry_count + 1);
+                REQUIRE(param5== retry_count + 1);
             }
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 }
 
-SCENARIO("タスク状態がコールバックで通知されること", "[taskq][run][callback]") {
+SCENARIO("タスク状態がコールバックで通知されること", tags("taskq", "run", "callback")) {
     GIVEN("タスクキューを容量 10, ワーカー 1 で初期化する") {
-        struct task_queue *tq = anttq_init(10, 1);
+        struct TaskQueue *tq{AntTQ_Init(10, 1)};
+        AntTQ_Start(tq);
 
         WHEN("成功するタスクを 1 件追加する") {
-            struct param {
-                task_t id;
-                int data;
-                int num_of_callbacks;
-                enum task_status statuses[10];
+            int task_called{0};
+            std::vector<enum TaskStatus> statuses;
+            auto runner = [&](TaskId, void *) -> bool {
+                task_called += 1;
+                return true;
             };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->id = id;
-                    ++(param->data);
-                    return true;
-                }
-                public: static bool callback(task_t id, enum task_status status, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->statuses[param->num_of_callbacks++] = status;
-                    return true;
-                }
+            auto callbackee = [&](TaskId, enum TaskStatus status, void *) -> bool {
+                statuses.push_back(status);
+                return true;
             };
 
-            task_t id;
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param = {-1, 0, 0};
-            item.task = task::run;
-            item.callback = task::callback;
-            item.arg = &param;
-            id = anttq_enqueue(tq, &item);
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            item.Callback = Lambda::cify<bool, TaskId, enum TaskStatus, void *>(callbackee);
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスク状態のコールバックが適宜呼ばれること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param.id == id);
-                REQUIRE(param.data == 1);
-                REQUIRE(param.num_of_callbacks == 2);
-                REQUIRE(param.statuses[0] == TS_ACK);
-                REQUIRE(param.statuses[1] == TS_SUCCESS);
+                REQUIRE(task_called == 1);
+                REQUIRE(statuses.size() == 2);
+                REQUIRE(statuses[0] == TS_ACK);
+                REQUIRE(statuses[1] == TS_SUCCESS);
             }
         }
 
         WHEN("失敗するタスクをリトライ 3 回で 1 件追加する") {
-            struct param {
-                task_t id;
-                int data;
-                int num_of_callbacks;
-                enum task_status statuses[10];
+            static const int retry_count{3};
+            int task_called{0};
+            std::vector<enum TaskStatus> statuses;
+            auto runner = [&](TaskId, void *) -> bool {
+                task_called += 1;
+                return false;
             };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->id = id;
-                    ++(param->data);
-                    return false;
-                }
-                public: static bool callback(task_t id, enum task_status status, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->statuses[param->num_of_callbacks++] = status;
-                    return true;
-                }
+            auto callbackee = [&](TaskId, enum TaskStatus status, void *) -> bool {
+                statuses.push_back(status);
+                return true;
             };
 
-            task_t id;
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param = {-1, 0, 0};
-            item.task = task::run;
-            item.callback = task::callback;
-            item.arg = &param;
-            item.retry = 3;
-            id = anttq_enqueue(tq, &item);
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            item.Callback = Lambda::cify<bool, TaskId, enum TaskStatus, void *>(callbackee);
+            item.retry = retry_count;
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスク状態のコールバックが適宜呼ばれること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param.id == id);
-                REQUIRE(param.data == 4);
-                REQUIRE(param.num_of_callbacks == 8);
-                REQUIRE(param.statuses[0] == TS_ACK);
-                REQUIRE(param.statuses[1] == TS_RETRY);
-                REQUIRE(param.statuses[2] == TS_ACK);
-                REQUIRE(param.statuses[3] == TS_RETRY);
-                REQUIRE(param.statuses[4] == TS_ACK);
-                REQUIRE(param.statuses[5] == TS_RETRY);
-                REQUIRE(param.statuses[6] == TS_ACK);
-                REQUIRE(param.statuses[7] == TS_FAIL);
+                REQUIRE(task_called == retry_count + 1);
+                REQUIRE(statuses.size() == 8);
+                REQUIRE(statuses[0] == TS_ACK);
+                REQUIRE(statuses[1] == TS_RETRY);
+                REQUIRE(statuses[2] == TS_ACK);
+                REQUIRE(statuses[3] == TS_RETRY);
+                REQUIRE(statuses[4] == TS_ACK);
+                REQUIRE(statuses[5] == TS_RETRY);
+                REQUIRE(statuses[6] == TS_ACK);
+                REQUIRE(statuses[7] == TS_FAIL);
             }
         }
 
         WHEN("ACK でキャンセルするタスクを 1 件追加する") {
-            struct param {
-                task_t id;
-                int data;
-                int num_of_callbacks;
-                enum task_status statuses[10];
+            static const int retry_count{3};
+            int task_called{0};
+            std::vector<enum TaskStatus> statuses;
+            auto runner = [&](TaskId, void *) -> bool {
+                task_called += 1;
+                return true;
             };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->id = id;
-                    ++(param->data);
+            auto callbackee = [&](TaskId, enum TaskStatus status, void *) -> bool {
+                statuses.push_back(status);
+                if (status == TS_ACK) {
                     return false;
                 }
-                public: static bool callback(task_t id, enum task_status status, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->statuses[param->num_of_callbacks++] = status;
-                    if (status == TS_ACK) {
-                        return false;
-                    }
-                    return true;
-                }
+                return true;
             };
 
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param = {-1, 0, 0};
-            item.task = task::run;
-            item.callback = task::callback;
-            item.arg = &param;
-            item.retry = 3;
-            anttq_enqueue(tq, &item);
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            item.Callback = Lambda::cify<bool, TaskId, enum TaskStatus, void *>(callbackee);
+            item.retry = retry_count;
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param.id == -1);
-                REQUIRE(param.data == 0);
-                REQUIRE(param.num_of_callbacks == 1);
-                REQUIRE(param.statuses[0] == TS_ACK);
+                REQUIRE(task_called == 0);
+                REQUIRE(statuses.size() == 1);
+                REQUIRE(statuses[0] == TS_ACK);
             }
         }
 
         WHEN("RETRY 1 回目でキャンセルするタスクを 1 件追加する") {
-            struct param {
-                task_t id;
-                int data;
-                int num_of_callbacks;
-                enum task_status statuses[10];
+            static const int retry_count{3};
+            int task_called{0};
+            std::vector<enum TaskStatus> statuses;
+            auto runner = [&](TaskId, void *) -> bool {
+                task_called += 1;
+                return false;
             };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->id = id;
-                    ++(param->data);
+            auto callbackee = [&](TaskId, enum TaskStatus status, void *) -> bool {
+                statuses.push_back(status);
+                if ((status == TS_RETRY) && (statuses.size() == 2)) {
                     return false;
                 }
-                public: static bool callback(task_t id, enum task_status status, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->statuses[param->num_of_callbacks++] = status;
-                    if ((status == TS_RETRY) && (param->num_of_callbacks == 2)) {
-                        return false;
-                    }
-                    return true;
-                }
+                return true;
             };
 
-            task_t id;
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param = {-1, 0, 0};
-            item.task = task::run;
-            item.callback = task::callback;
-            item.arg = &param;
-            item.retry = 3;
-            id = anttq_enqueue(tq, &item);
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            item.Callback = Lambda::cify<bool, TaskId, enum TaskStatus, void *>(callbackee);
+            item.retry = retry_count;
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param.id == id);
-                REQUIRE(param.data == 1);
-                REQUIRE(param.num_of_callbacks == 2);
-                REQUIRE(param.statuses[0] == TS_ACK);
-                REQUIRE(param.statuses[1] == TS_RETRY);
+                REQUIRE(task_called == 1);
+                REQUIRE(statuses.size() == 2);
+                REQUIRE(statuses[0] == TS_ACK);
+                REQUIRE(statuses[1] == TS_RETRY);
             }
         }
 
         WHEN("RETRY 2 回目でキャンセルするタスクを 1 件追加する") {
-            struct param {
-                task_t id;
-                int data;
-                int num_of_callbacks;
-                enum task_status statuses[10];
+            static const int retry_count{3};
+            int task_called{0};
+            std::vector<enum TaskStatus> statuses;
+            auto runner = [&](TaskId, void *) -> bool {
+                task_called += 1;
+                return false;
             };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->id = id;
-                    ++(param->data);
+            auto callbackee = [&](TaskId, enum TaskStatus status, void *) -> bool {
+                statuses.push_back(status);
+                if ((status == TS_RETRY) && (statuses.size() == 4)) {
                     return false;
                 }
-                public: static bool callback(task_t id, enum task_status status, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->statuses[param->num_of_callbacks++] = status;
-                    if ((status == TS_RETRY) && (param->num_of_callbacks == 4)) {
-                        return false;
-                    }
-                    return true;
-                }
+                return true;
             };
 
-            task_t id;
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param = {-1, 0, 0};
-            item.task = task::run;
-            item.callback = task::callback;
-            item.arg = &param;
-            item.retry = 3;
-            id = anttq_enqueue(tq, &item);
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            item.Callback = Lambda::cify<bool, TaskId, enum TaskStatus, void *>(callbackee);
+            item.retry = retry_count;
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param.id == id);
-                REQUIRE(param.data == 2);
-                REQUIRE(param.num_of_callbacks == 4);
-                REQUIRE(param.statuses[0] == TS_ACK);
-                REQUIRE(param.statuses[1] == TS_RETRY);
-                REQUIRE(param.statuses[2] == TS_ACK);
-                REQUIRE(param.statuses[3] == TS_RETRY);
+                REQUIRE(task_called == 2);
+                REQUIRE(statuses.size() == 4);
+                REQUIRE(statuses[0] == TS_ACK);
+                REQUIRE(statuses[1] == TS_RETRY);
+                REQUIRE(statuses[2] == TS_ACK);
+                REQUIRE(statuses[3] == TS_RETRY);
             }
         }
 
         WHEN("RETRY 3 回目でキャンセルするタスクを 1 件追加する") {
-            struct param {
-                task_t id;
-                int data;
-                int num_of_callbacks;
-                enum task_status statuses[10];
+            static const int retry_count{3};
+            int task_called{0};
+            std::vector<enum TaskStatus> statuses;
+            auto runner = [&](TaskId, void *) -> bool {
+                task_called += 1;
+                return false;
             };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->id = id;
-                    ++(param->data);
+            auto callbackee = [&](TaskId, enum TaskStatus status, void *) -> bool {
+                statuses.push_back(status);
+                if ((status == TS_RETRY) && (statuses.size() == 6)) {
                     return false;
                 }
-                public: static bool callback(task_t id, enum task_status status, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->statuses[param->num_of_callbacks++] = status;
-                    if ((status == TS_RETRY) && (param->num_of_callbacks == 6)) {
-                        return false;
-                    }
-                    return true;
-                }
+                return true;
             };
 
-            task_t id;
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param = {-1, 0, 0};
-            item.task = task::run;
-            item.callback = task::callback;
-            item.arg = &param;
-            item.retry = 3;
-            id = anttq_enqueue(tq, &item);
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            item.Callback = Lambda::cify<bool, TaskId, enum TaskStatus, void *>(callbackee);
+            item.retry = retry_count;
+            REQUIRE(AntTQ_Enqueue(tq, &item) >= 0);
 
             THEN("タスクがキャンセルされること") {
                 /* 非同期処理が終わるのを待つ. */
                 msleep(100);
 
-                REQUIRE(param.id == id);
-                REQUIRE(param.data == 3);
-                REQUIRE(param.num_of_callbacks == 6);
-                REQUIRE(param.statuses[0] == TS_ACK);
-                REQUIRE(param.statuses[1] == TS_RETRY);
-                REQUIRE(param.statuses[2] == TS_ACK);
-                REQUIRE(param.statuses[3] == TS_RETRY);
-                REQUIRE(param.statuses[4] == TS_ACK);
-                REQUIRE(param.statuses[5] == TS_RETRY);
+                REQUIRE(task_called == 3);
+                REQUIRE(statuses.size() == 6);
+                REQUIRE(statuses[0] == TS_ACK);
+                REQUIRE(statuses[1] == TS_RETRY);
+                REQUIRE(statuses[2] == TS_ACK);
+                REQUIRE(statuses[3] == TS_RETRY);
+                REQUIRE(statuses[4] == TS_ACK);
+                REQUIRE(statuses[5] == TS_RETRY);
             }
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 }
 
-SCENARIO("タスク識別子が正しく反映されていること", "[taskq][run][id]") {
+SCENARIO("タスク識別子が正しく反映されていること", tags("taskq", "run", "id")) {
     GIVEN("タスクキューを容量 10, ワーカー 1 で初期化する") {
-        struct task_queue *tq = anttq_init(10, 1);
+        struct TaskQueue *tq{AntTQ_Init(10, 1)};
+        AntTQ_Start(tq);
 
         WHEN("成功するタスクを 10 件追加する") {
-            struct param {
-                task_t id;
-            };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    param->id = id;
-                    return true;
-                }
+            std::vector<TaskId> task_ids;
+            auto runner = [&](TaskId id, void *) -> bool {
+                task_ids.push_back(id);
+                return true;
             };
 
-            task_t id[10];
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param[10] = {-1};
-            item.task = task::run;
+            std::vector<TaskId> ids;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
             for (int i = 0; i < 10; ++i) {
-                item.arg = &param[i];
-                id[i] = anttq_enqueue(tq, &item);
+                ids.push_back(AntTQ_Enqueue(tq, &item));
             }
 
-            THEN("タスク識別子が呼び出し側, タスク側で一致すること") {
-                /* 非同期処理が終わるのを待つ. */
-                msleep(100);
+            /* 非同期処理が終わるのを待つ. */
+            msleep(100);
 
-                for (int i = 0; i < 10; ++i) {
-                    REQUIRE(param[i].id == id[i]);
-                }
+            THEN("タスク識別子が呼び出し側, タスク側で一致すること") {
+                auto i = GENERATE(Catch::Generators::range(1, 10));
+                REQUIRE(task_ids[i] == ids[i]);
             }
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
     }
 }
 
-SCENARIO("タスク削除できること", "[taskq][delete]") {
+SCENARIO("タスク削除できること", tags("taskq", "cancel")) {
     GIVEN("タスクキューを容量 10, ワーカー 1 で初期化する") {
-        struct task_queue *tq = anttq_init(10, 1);
+        struct TaskQueue *tq{AntTQ_Init(10, 1)};
+        AntTQ_Start(tq);
 
         WHEN("成功するタスクを 10 件追加し, 削除する") {
-            struct param {
-                task_t id;
-            };
-            class task {
-                public: static bool run(task_t id, void *arg) {
-                    struct param *param = (struct param *)arg;
-                    msleep(5);
-                    param->id = id;
-                    return true;
-                }
+            std::vector<TaskId> task_ids;
+            auto runner = [&](TaskId id, void *) -> bool {
+                msleep(5);
+                task_ids.push_back(id);
+                return true;
             };
 
-            task_t id[10];
-            struct task_item item = TASK_ITEM_INITIALIZER;
-            struct param param[10] = {-1};
-            item.task = task::run;
+            std::vector<TaskId> ids;
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
             for (int i = 0; i < 10; ++i) {
-                item.arg = &param[i];
-                id[i] = anttq_enqueue(tq, &item);
+                ids.push_back(AntTQ_Enqueue(tq, &item));
             }
-            REQUIRE(anttq_delete(tq, id[1]) == 0);
-            id[1] = 0;
-            REQUIRE(anttq_delete(tq, id[3]) == 0);
-            id[3] = 0;
-            REQUIRE(anttq_delete(tq, id[5]) == 0);
-            id[5] = 0;
-            REQUIRE(anttq_delete(tq, id[7]) == 0);
-            id[7] = 0;
-            REQUIRE(anttq_delete(tq, id[9]) == 0);
-            id[9] = 0;
+            REQUIRE(AntTQ_Cancel(tq, ids[1]) == 0);
+            ids.erase(ids.begin() + 1);
+            REQUIRE(AntTQ_Cancel(tq, ids[2]) == 0);
+            ids.erase(ids.begin() + 2);
+            REQUIRE(AntTQ_Cancel(tq, ids[3]) == 0);
+            ids.erase(ids.begin() + 3);
+            REQUIRE(AntTQ_Cancel(tq, ids[4]) == 0);
+            ids.erase(ids.begin() + 4);
+            REQUIRE(AntTQ_Cancel(tq, ids[5]) == 0);
+            ids.erase(ids.begin() + 5);
+
+            /* 非同期処理が終わるのを待つ. */
+            msleep(100);
 
             THEN("削除できること") {
-                /* 非同期処理が終わるのを待つ. */
-                msleep(100);
-
-                for (int i = 0; i < 10; ++i) {
-                    REQUIRE(param[i].id == id[i]);
-                }
+                auto i = GENERATE(Catch::Generators::range(1, 5));
+                REQUIRE(task_ids[i] == ids[i]);
             }
         }
 
-        anttq_term(tq);
+        AntTQ_Term(tq);
+    }
+}
+
+SCENARIO("連続動作確認", tags("taskq", "run")) {
+    GIVEN("タスクキューを容量 30000, ワーカー 8 で初期化する") {
+        static const size_t capacity{30000};
+        static const size_t workers{8};
+        struct TaskQueue *tq = AntTQ_Init(capacity, workers);
+        REQUIRE(tq != NULL);
+        AntTQ_Start(tq);
+
+        WHEN("タスクを 100000 件追加する") {
+            static const size_t width = 100000;
+            class BitFlags flags(width);
+            auto runner = [&](TaskId, void *arg) -> bool {
+                size_t bit{(uintptr_t)arg};
+                flags.Set(bit);
+                return true;
+            };
+
+            struct TaskItem item{TASK_ITEM_INITIALIZER};
+            item.Task = Lambda::cify<bool, TaskId, void *>(runner);
+            for (size_t i = 0; i < width; i += 1) {
+                item.arg = (void *)(uintptr_t)i;
+                AntTQ_Enqueue(tq, &item);
+            }
+
+            /* 非同期処理が終わるのを待つ. */
+            msleep(100);
+
+            THEN("タスクがすべて呼び出されていること") {
+                bool completed = true;
+                for (size_t i = 0; i < width; i += 1) {
+                    if (!flags.Get(i)) {
+                        completed = false;
+                        break;
+                    }
+                }
+                REQUIRE(completed == true);
+            }
+        }
+
+        AntTQ_Term(tq);
     }
 }
